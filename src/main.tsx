@@ -3,6 +3,14 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/pulse-radio/sw.js", { scope: "/pulse-radio/" }).catch(() => {
+      // The site remains fully usable if offline support is unavailable.
+    });
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
