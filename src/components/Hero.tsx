@@ -42,36 +42,6 @@ export function Hero() {
   const [streamError, setStreamError] = useState(false);
   const [nowPlaying, setNowPlaying] = useState({ artist: "", song: "" });
 
-  useEffect(() => {
-    const onPlayerToggle = () => {
-      void togglePlayback();
-    };
-
-    window.addEventListener("pulse:toggle-player", onPlayerToggle);
-    return () => window.removeEventListener("pulse:toggle-player", onPlayerToggle);
-  });
-
-  useEffect(() => {
-    const eventSource = new EventSource(METADATA_URL);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const streamTitle = data?.streamTitle || data?.metadata?.current?.title || "";
-        if (streamTitle) setNowPlaying(splitStreamTitle(streamTitle));
-      } catch {
-        // Keep the player usable if metadata is temporarily unavailable.
-      }
-    };
-
-    eventSource.onerror = () => {
-      // Metadata is optional; the audio stream remains independent.
-      eventSource.close();
-    };
-
-    return () => eventSource.close();
-  }, []);
-
   const togglePlayback = async () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -94,6 +64,35 @@ export function Hero() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const onPlayerToggle = () => {
+      void togglePlayback();
+    };
+
+    window.addEventListener("pulse:toggle-player", onPlayerToggle);
+    return () => window.removeEventListener("pulse:toggle-player", onPlayerToggle);
+  }, []);
+
+  useEffect(() => {
+    const eventSource = new EventSource(METADATA_URL);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const streamTitle = data?.streamTitle || data?.metadata?.current?.title || "";
+        if (streamTitle) setNowPlaying(splitStreamTitle(streamTitle));
+      } catch {
+        // Keep the player usable if metadata is temporarily unavailable.
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => eventSource.close();
+  }, []);
 
   const songLabel = nowPlaying.song || "PULSE — Le direct";
   const artistLabel = nowPlaying.artist || "Écoute en direct · 24/7";
