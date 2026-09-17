@@ -1,0 +1,20 @@
+{
+  "name": "PULSE. — Pas une radio. Une fréquence.",
+  "short_name": "PULSE.",
+  "description": "PULSE — direct, sessions live, podcasts et scènes émergentes.",
+  "lang": "fr",
+  "start_url": "/pulse-radio/",
+  "scope": "/pulse-radio/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050507",
+  "theme_color": "#050507",
+  "icons": [
+    {
+      "src": "/pulse-radio/images/cover-orb.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
