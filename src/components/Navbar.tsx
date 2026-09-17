@@ -10,6 +10,10 @@ const LINKS = [
   { label: "FAQ", href: "#faq" },
 ];
 
+function requestPlayerToggle() {
+  window.dispatchEvent(new CustomEvent("pulse:toggle-player"));
+}
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -31,6 +35,11 @@ export function Navbar() {
     };
   }, [open]);
 
+  const listen = () => {
+    setOpen(false);
+    requestPlayerToggle();
+  };
+
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <div
@@ -45,7 +54,6 @@ export function Navbar() {
             scrolled ? "glass-deep edge-glow" : "border border-transparent"
           )}
         >
-          {/* Logo */}
           <a href="#" className="group flex items-center gap-2.5" aria-label="PULSE — accueil">
             <span className="relative grid h-9 w-9 place-items-center rounded-xl bg-acid text-ink transition-transform duration-500 group-hover:rotate-[-8deg] group-hover:scale-105">
               <Radio className="h-4.5 w-4.5" strokeWidth={2.5} />
@@ -59,7 +67,6 @@ export function Navbar() {
             </span>
           </a>
 
-          {/* Desktop links */}
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Navigation principale">
             {LINKS.map((l) => (
               <a
@@ -73,13 +80,14 @@ export function Navbar() {
           </nav>
 
           <div className="flex items-center gap-2.5">
-            <a
-              href="#offres"
+            <button
+              type="button"
+              onClick={listen}
               className="btn-acid hidden items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold sm:inline-flex"
             >
               <Play className="h-4 w-4 fill-current" aria-hidden="true" />
               Écouter en direct
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
@@ -94,7 +102,6 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu */}
       <div
         id="mobile-menu"
         className={cn(
@@ -117,9 +124,9 @@ export function Navbar() {
               {l.label}
             </a>
           ))}
-          <a
-            href="#offres"
-            onClick={() => setOpen(false)}
+          <button
+            type="button"
+            onClick={listen}
             style={{ transitionDelay: open ? "500ms" : "0ms" }}
             className={cn(
               "btn-acid mt-6 inline-flex w-fit items-center gap-2 rounded-full px-6 py-3 font-semibold transition-all duration-500",
@@ -128,7 +135,7 @@ export function Navbar() {
           >
             <Play className="h-4 w-4 fill-current" aria-hidden="true" />
             Écouter en direct
-          </a>
+          </button>
         </nav>
         <p className="absolute bottom-8 left-8 font-mono text-[11px] uppercase tracking-[0.25em] text-fog">
           En direct de Paris 11e — 24/7
