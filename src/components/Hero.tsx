@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownRight, MapPin, Pause, Play, Radio, Sparkles, Users } from "lucide-react";
+import { ArrowDownRight, MapPin, Pause, Play, Radio, Sparkles, Users, Volume2, VolumeX } from "lucide-react";
 import { cn } from "../utils/cn";
 import { Reveal } from "./Reveal";
 import { Equalizer } from "./Equalizer";
@@ -35,11 +35,26 @@ function splitStreamTitle(value: string) {
   return { artist: "", song: title };
 }
 
+function getStreamTitle(data: any) {
+  return (
+    data?.streamTitle ||
+    data?.stream_title ||
+    data?.title ||
+    data?.metadata?.current?.title ||
+    data?.metadata?.current?.streamTitle ||
+    data?.now_playing?.song?.title ||
+    ""
+  );
+}
+
 export function Hero() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
   const [nowPlaying, setNowPlaying] = useState({ artist: "", song: "" });
 
   const togglePlayback = async () => {
@@ -48,15 +63,16 @@ export function Hero() {
 
     if (!audio.paused) {
       audio.pause();
-      setPlaying(false);
       return;
     }
 
     setLoading(true);
     setStreamError(false);
+
     try {
+      // Recreate the connection after a previous network error.
+      if (audio.readyState === HTMLMediaElement.HAVE_NOTHING) audio.load();
       await audio.play();
-      setPlaying(true);
     } catch {
       setPlaying(false);
       setStreamError(true);
@@ -65,14 +81,70 @@ export function Hero() {
     }
   };
 
-  useEffect(() => {
-    const onPlayerToggle = () => {
-      void togglePlayback();
-    };
+  const retryPlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setStreamError(false);
+    setLoading(true);
+    audio.pause();
+    audio.src = STREAM_URL;
+    audio.load();
+    void audio.play().catch(() => {
+      setPlaying(false);
+      setLoading(false);
+      setStreamError(true);
+    });
+  };
 
+  const toggleMute = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.muted = !audio.muted;
+    setMuted(audio.muted);
+  };
+
+  const changeVolume = (value: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = value;
+    if (value > 0 && audio.muted) audio.muted = false;
+    setVolume(value);
+    setMuted(audio.muted);
+  };
+
+  useEffect(() => {
+    const onPlayerToggle = () => void togglePlayback();
     window.addEventListener("pulse:toggle-player", onPlayerToggle);
     return () => window.removeEventListener("pulse:toggle-player", onPlayerToggle);
   }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.volume = volume;
+
+    const onError = () => {
+      setPlaying(false);
+      setLoading(false);
+      setStreamError(true);
+
+      // One automatic reconnect avoids leaving a listener stuck after a transient
+      // network interruption, while the manual retry remains available.
+      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = window.setTimeout(() => {
+        if (audioRef.current?.paused) return;
+        audio.load();
+        void audio.play().catch(() => undefined);
+      }, 2500);
+    };
+
+    audio.addEventListener("error", onError);
+    return () => {
+      audio.removeEventListener("error", onError);
+      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
+    };
+  }, [volume]);
 
   useEffect(() => {
     const eventSource = new EventSource(METADATA_URL);
@@ -80,22 +152,58 @@ export function Hero() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        const streamTitle = data?.streamTitle || data?.metadata?.current?.title || "";
-        if (streamTitle) setNowPlaying(splitStreamTitle(streamTitle));
+        const streamTitle = getStreamTitle(data);
+        if (!streamTitle) return;
+
+        const parsed = splitStreamTitle(String(streamTitle));
+        setNowPlaying(parsed);
+
+        if ("mediaSession" in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: parsed.song || "PULSE — Le direct",
+            artist: parsed.artist || "PULSE",
+            album: "PULSE Radio",
+          });
+        }
       } catch {
-        // Keep the player usable if metadata is temporarily unavailable.
+        // Metadata is optional; the audio stream remains independent.
       }
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
+    eventSource.onerror = () => eventSource.close();
     return () => eventSource.close();
   }, []);
 
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    const actions: MediaSessionAction[] = ["play", "pause"];
+    const handlers: Partial<Record<MediaSessionAction, () => void>> = {
+      play: () => void audioRef.current?.play(),
+      pause: () => audioRef.current?.pause(),
+    };
+
+    actions.forEach((action) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handlers[action] || null);
+      } catch {
+        // Some browsers expose Media Session partially.
+      }
+    });
+
+    return () => {
+      actions.forEach((action) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, null);
+        } catch {
+          // Ignore unsupported action cleanup.
+        }
+      });
+    };
+  }, []);
+
   const songLabel = nowPlaying.song || "PULSE — Le direct";
-  const artistLabel = nowPlaying.artist || "Écoute en direct · 24/7";
+  const artistLabel = nowPlaying.artist || "Écoute en direct";
 
   return (
     <section id="direct" className="relative scroll-mt-24 overflow-hidden pt-36 sm:pt-40" aria-label="Introduction">
@@ -103,11 +211,22 @@ export function Hero() {
         ref={audioRef}
         src={STREAM_URL}
         preload="none"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
+        onPlay={() => {
+          setPlaying(true);
+          setLoading(false);
+          setStreamError(false);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+        }}
+        onPause={() => {
+          setPlaying(false);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+        }}
         onWaiting={() => setLoading(true)}
-        onPlaying={() => { setLoading(false); setStreamError(false); }}
-        onError={() => { setPlaying(false); setLoading(false); setStreamError(true); }}
+        onStalled={() => setLoading(true)}
+        onPlaying={() => {
+          setLoading(false);
+          setStreamError(false);
+        }}
       />
 
       <div className="bg-grid absolute inset-0" aria-hidden="true" />
@@ -147,12 +266,12 @@ export function Hero() {
               <div className="mt-9 flex flex-wrap items-center gap-4">
                 <button
                   type="button"
-                  onClick={togglePlayback}
+                  onClick={streamError ? retryPlayback : togglePlayback}
                   disabled={loading}
                   className="btn-acid inline-flex items-center gap-2.5 rounded-full px-7 py-4 font-semibold disabled:cursor-wait disabled:opacity-70"
                 >
                   {playing ? <Pause className="h-4.5 w-4.5 fill-current" aria-hidden="true" /> : <Play className="h-4.5 w-4.5 fill-current" aria-hidden="true" />}
-                  {loading ? "Connexion…" : playing ? "Mettre en pause" : "Écouter le direct"}
+                  {loading ? "Connexion…" : streamError ? "Réessayer le direct" : playing ? "Mettre en pause" : "Écouter le direct"}
                 </button>
                 <a href="#appli" className="btn-ghost inline-flex items-center gap-2.5 rounded-full hairline px-7 py-4 font-medium text-milk">
                   Découvrir l'appli
@@ -160,7 +279,7 @@ export function Hero() {
                 </a>
               </div>
               <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fog/80">
-                {streamError ? "Le direct est momentanément indisponible · réessayez" : "Gratuit · Sans CB · Direct en un clic"}
+                {streamError ? "Connexion au flux impossible · vérifiez votre réseau puis réessayez" : "Flux Zeno FM · lecture directe depuis le navigateur"}
               </p>
             </Reveal>
 
@@ -168,10 +287,10 @@ export function Hero() {
               <div className="glass-deep edge-glow mt-9 flex max-w-xl items-center gap-4 rounded-2xl p-4">
                 <button
                   type="button"
-                  onClick={togglePlayback}
+                  onClick={streamError ? retryPlayback : togglePlayback}
                   disabled={loading}
                   aria-pressed={playing}
-                  aria-label={playing ? "Mettre le direct en pause" : "Lire le direct"}
+                  aria-label={playing ? "Mettre le direct en pause" : streamError ? "Réessayer le direct" : "Lire le direct"}
                   className="grid h-12 w-12 shrink-0 cursor-pointer place-items-center rounded-full bg-acid text-ink transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-wait disabled:opacity-70"
                 >
                   {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="ml-0.5 h-5 w-5 fill-current" />}
@@ -193,6 +312,21 @@ export function Hero() {
                   </div>
                   <p className="truncate font-display text-base font-medium">{songLabel}</p>
                   <p className="truncate text-xs text-fog">{artistLabel}</p>
+                </div>
+                <div className="hidden items-center gap-2 sm:flex">
+                  <button type="button" onClick={toggleMute} aria-label={muted ? "Activer le son" : "Couper le son"} className="text-fog transition-colors hover:text-milk">
+                    {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={muted ? 0 : volume}
+                    onChange={(event) => changeVolume(Number(event.target.value))}
+                    aria-label="Volume"
+                    className="w-16 accent-acid"
+                  />
                 </div>
                 <Equalizer playing={playing} className="h-6 w-10 shrink-0 text-acid" />
               </div>
