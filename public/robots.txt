@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://cmbenkouma-alt.github.io/pulse-radio/sitemap.xml
