@@ -43,6 +43,15 @@ export function Hero() {
   const [nowPlaying, setNowPlaying] = useState({ artist: "", song: "" });
 
   useEffect(() => {
+    const onPlayerToggle = () => {
+      void togglePlayback();
+    };
+
+    window.addEventListener("pulse:toggle-player", onPlayerToggle);
+    return () => window.removeEventListener("pulse:toggle-player", onPlayerToggle);
+  });
+
+  useEffect(() => {
     const eventSource = new EventSource(METADATA_URL);
 
     eventSource.onmessage = (event) => {
@@ -90,7 +99,7 @@ export function Hero() {
   const artistLabel = nowPlaying.artist || "Écoute en direct · 24/7";
 
   return (
-    <section className="relative overflow-hidden pt-36 sm:pt-40" aria-label="Introduction">
+    <section id="direct" className="relative scroll-mt-24 overflow-hidden pt-36 sm:pt-40" aria-label="Introduction">
       <audio
         ref={audioRef}
         src={STREAM_URL}
@@ -102,7 +111,6 @@ export function Hero() {
         onError={() => { setPlaying(false); setLoading(false); setStreamError(true); }}
       />
 
-      {/* Ambient background */}
       <div className="bg-grid absolute inset-0" aria-hidden="true" />
       <div className="absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-viol/25 blur-[140px] animate-blob" aria-hidden="true" />
       <div className="absolute top-40 -left-40 h-[420px] w-[420px] rounded-full bg-acid/10 blur-[120px] animate-blob" style={{ animationDelay: "-6s" }} aria-hidden="true" />
@@ -110,7 +118,6 @@ export function Hero() {
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
         <div className="grid items-center gap-14 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
-          {/* ---- Left: copy ---- */}
           <div>
             <Reveal delay={0}>
               <div className="inline-flex items-center gap-2.5 rounded-full glass px-4 py-2">
@@ -158,7 +165,6 @@ export function Hero() {
               </p>
             </Reveal>
 
-            {/* Live mini player */}
             <Reveal delay={540}>
               <div className="glass-deep edge-glow mt-9 flex max-w-xl items-center gap-4 rounded-2xl p-4">
                 <button
@@ -193,7 +199,6 @@ export function Hero() {
               </div>
             </Reveal>
 
-            {/* Listeners */}
             <Reveal delay={640}>
               <div className="mt-7 flex items-center gap-4">
                 <div className="flex -space-x-2.5">
@@ -215,10 +220,8 @@ export function Hero() {
             </Reveal>
           </div>
 
-          {/* ---- Right: visual ---- */}
           <Reveal variant="right" delay={300} className="relative mt-2 lg:mt-0">
             <div className="relative mx-auto max-w-sm lg:max-w-md">
-              {/* Vinyl ring */}
               <div className="absolute -top-14 -right-14 hidden h-44 w-44 rounded-full border border-white/10 animate-spin-slow lg:block" aria-hidden="true">
                 <div className="absolute inset-3 rounded-full border border-white/10" />
                 <div className="absolute inset-7 rounded-full border border-acid/30" />
@@ -244,7 +247,6 @@ export function Hero() {
                 </div>
               </div>
 
-              {/* Floating chips */}
               <div className="glass-deep absolute -left-20 top-10 hidden rounded-2xl p-4 animate-floaty lg:block">
                 <div className="flex items-center gap-2.5">
                   <span className="grid h-9 w-9 place-items-center rounded-xl bg-viol/25 text-viol">
@@ -276,7 +278,6 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Program ticker */}
       <Reveal delay={720} className="mt-20 sm:mt-24">
         <div className="border-y border-line bg-ink-2/60 py-4 backdrop-blur-sm">
           <Marquee duration={42} pauseOnHover>
