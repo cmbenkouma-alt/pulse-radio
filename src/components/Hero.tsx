@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDownRight, MapPin, Pause, Play, Radio, Sparkles, Users } from "lucide-react";
 import { cn } from "../utils/cn";
 import { Reveal } from "./Reveal";
 import { Equalizer } from "./Equalizer";
 import { Marquee } from "./Marquee";
+
+const STREAM_URL = "https://stream.zeno.fm/empfvkwmxkyuv";
+const METADATA_URL = "https://api.zeno.fm/mounts/metadata/subscribe/empfvkwmxkyuv";
 
 const SHOWS = [
   "06:00 Morning Pulse",
@@ -22,11 +25,83 @@ const AVATARS = [
   { initials: "NT", from: "#6ee7f9", to: "#8b5cf6" },
 ];
 
+function splitStreamTitle(value: string) {
+  const title = value.trim();
+  if (!title) return { artist: "", song: "" };
+  const parts = title.split(" - ");
+  if (parts.length >= 2) {
+    return { artist: parts.shift()?.trim() || "", song: parts.join(" - ").trim() };
+  }
+  return { artist: "", song: title };
+}
+
 export function Hero() {
-  const [playing, setPlaying] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [streamError, setStreamError] = useState(false);
+  const [nowPlaying, setNowPlaying] = useState({ artist: "", song: "" });
+
+  useEffect(() => {
+    const eventSource = new EventSource(METADATA_URL);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const streamTitle = data?.streamTitle || data?.metadata?.current?.title || "";
+        if (streamTitle) setNowPlaying(splitStreamTitle(streamTitle));
+      } catch {
+        // Keep the player usable if metadata is temporarily unavailable.
+      }
+    };
+
+    eventSource.onerror = () => {
+      // Metadata is optional; the audio stream remains independent.
+      eventSource.close();
+    };
+
+    return () => eventSource.close();
+  }, []);
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!audio.paused) {
+      audio.pause();
+      setPlaying(false);
+      return;
+    }
+
+    setLoading(true);
+    setStreamError(false);
+    try {
+      await audio.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+      setStreamError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const songLabel = nowPlaying.song || "PULSE — Le direct";
+  const artistLabel = nowPlaying.artist || "Écoute en direct · 24/7";
 
   return (
     <section className="relative overflow-hidden pt-36 sm:pt-40" aria-label="Introduction">
+      <audio
+        ref={audioRef}
+        src={STREAM_URL}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onWaiting={() => setLoading(true)}
+        onPlaying={() => { setLoading(false); setStreamError(false); }}
+        onError={() => { setPlaying(false); setLoading(false); setStreamError(true); }}
+      />
+
       {/* Ambient background */}
       <div className="bg-grid absolute inset-0" aria-hidden="true" />
       <div className="absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-viol/25 blur-[140px] animate-blob" aria-hidden="true" />
@@ -64,17 +139,22 @@ export function Hero() {
 
             <Reveal delay={430}>
               <div className="mt-9 flex flex-wrap items-center gap-4">
-                <a href="#offres" className="btn-acid inline-flex items-center gap-2.5 rounded-full px-7 py-4 font-semibold">
-                  <Play className="h-4.5 w-4.5 fill-current" aria-hidden="true" />
-                  Écouter le direct
-                </a>
+                <button
+                  type="button"
+                  onClick={togglePlayback}
+                  disabled={loading}
+                  className="btn-acid inline-flex items-center gap-2.5 rounded-full px-7 py-4 font-semibold disabled:cursor-wait disabled:opacity-70"
+                >
+                  {playing ? <Pause className="h-4.5 w-4.5 fill-current" aria-hidden="true" /> : <Play className="h-4.5 w-4.5 fill-current" aria-hidden="true" />}
+                  {loading ? "Connexion…" : playing ? "Mettre en pause" : "Écouter le direct"}
+                </button>
                 <a href="#appli" className="btn-ghost inline-flex items-center gap-2.5 rounded-full hairline px-7 py-4 font-medium text-milk">
                   Découvrir l'appli
                   <ArrowDownRight className="h-4.5 w-4.5" aria-hidden="true" />
                 </a>
               </div>
               <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-fog/80">
-                Gratuit · Sans CB · Branché en 12 secondes
+                {streamError ? "Le direct est momentanément indisponible · réessayez" : "Gratuit · Sans CB · Direct en un clic"}
               </p>
             </Reveal>
 
@@ -83,16 +163,17 @@ export function Hero() {
               <div className="glass-deep edge-glow mt-9 flex max-w-xl items-center gap-4 rounded-2xl p-4">
                 <button
                   type="button"
-                  onClick={() => setPlaying((v) => !v)}
+                  onClick={togglePlayback}
+                  disabled={loading}
                   aria-pressed={playing}
                   aria-label={playing ? "Mettre le direct en pause" : "Lire le direct"}
-                  className="grid h-12 w-12 shrink-0 cursor-pointer place-items-center rounded-full bg-acid text-ink transition-transform duration-300 hover:scale-105 active:scale-95"
+                  className="grid h-12 w-12 shrink-0 cursor-pointer place-items-center rounded-full bg-acid text-ink transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-wait disabled:opacity-70"
                 >
                   {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="ml-0.5 h-5 w-5 fill-current" />}
                 </button>
                 <img
                   src="/images/cover-wave.jpg"
-                  alt="Pochette du titre en cours de diffusion"
+                  alt="PULSE en direct"
                   className={cn(
                     "h-14 w-14 shrink-0 rounded-xl object-cover transition-transform duration-700",
                     playing && "animate-spin-slow rounded-full"
@@ -102,11 +183,11 @@ export function Hero() {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-mag">On air</span>
-                    <span className="font-mono text-[10px] text-fog">07:42</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-mag">{playing ? "On air" : "PULSE"}</span>
+                    <span className="font-mono text-[10px] text-fog">LIVE</span>
                   </div>
-                  <p className="truncate font-display text-base font-medium">LUNA MAR — Néon Éternel</p>
-                  <p className="truncate text-xs text-fog">Morning Pulse · avec Salomé & Adil</p>
+                  <p className="truncate font-display text-base font-medium">{songLabel}</p>
+                  <p className="truncate text-xs text-fog">{artistLabel}</p>
                 </div>
                 <Equalizer playing={playing} className="h-6 w-10 shrink-0 text-acid" />
               </div>
@@ -128,8 +209,7 @@ export function Hero() {
                   ))}
                 </div>
                 <p className="text-sm text-fog">
-                  <span className="font-semibold text-milk">82 416 personnes</span> branchées
-                  en ce moment même
+                  <span className="font-semibold text-milk">En direct</span> · rejoignez l'écoute
                 </p>
               </div>
             </Reveal>
@@ -182,8 +262,8 @@ export function Hero() {
                     <Users className="h-4.5 w-4.5" />
                   </span>
                   <div>
-                    <p className="text-sm font-semibold">1 248 votes</p>
-                    <p className="font-mono text-[10px] text-fog">pour le prochain titre</p>
+                    <p className="text-sm font-semibold">Live</p>
+                    <p className="font-mono text-[10px] text-fog">écoute en cours</p>
                   </div>
                 </div>
               </div>
